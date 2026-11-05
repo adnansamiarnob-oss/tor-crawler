@@ -1,0 +1,5 @@
+DataDirectory C:\Users\arnob\Desktop\axion\tor-data
+SocksPort 9050
+ControlPort 9051
+CookieAuthentication 0
+Log notice file C:\Users\arnob\Desktop\axion\tor-data\tor.log

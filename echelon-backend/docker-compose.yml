@@ -1,0 +1,136 @@
+version: '3.9'
+
+services:
+  # ─── ECHELON Python FastAPI Backend ───────────────────────────────────────
+  echelon-api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: echelon-api
+    ports:
+      - "8000:8000"
+    environment:
+      - TOR_CONTROL_HOST=tor-pool
+      - TOR_CONTROL_PORT=9051
+      - TOR_PROXY=socks5h://tor-pool:9050
+      - I2P_PROXY=http://i2pd-router:4444
+      - ZERONET_API=http://zeronet-headless:43110
+      - NEO4J_URI=bolt://neo4j:7687
+      - NEO4J_USER=neo4j
+      - NEO4J_PASSWORD=echelon_neo4j
+      - REDIS_URL=redis://redis:6379/0
+    depends_on:
+      - tor-pool
+      - i2pd-router
+      - redis
+    restart: unless-stopped
+    networks:
+      - echelon-net
+
+  # ─── Tor SOCKS5 Proxy Pool ────────────────────────────────────────────────
+  tor-pool:
+    image: dperson/torproxy:latest
+    container_name: echelon-tor
+    environment:
+      - TOR_MaxCircuitDirtiness=300
+      - TOR_ControlPort=9051
+      - TOR_NewCircuitPeriod=30
+      - TOR_SocksPort=9050
+    ports:
+      - "9050:9050"
+      - "9051:9051"
+    restart: unless-stopped
+    networks:
+      - echelon-net
+
+  # ─── I2P Garlic Router (i2pd) ─────────────────────────────────────────────
+  i2pd-router:
+    image: purplei2p/i2pd:latest
+    container_name: echelon-i2p
+    command: >
+      --sam.enabled=1
+      --sam.address=0.0.0.0
+      --sam.port=7656
+      --httpproxy.enabled=1
+      --httpproxy.address=0.0.0.0
+      --httpproxy.port=4444
+      --floodfill=1
+      --bandwidth=X
+    ports:
+      - "4444:4444"
+      - "7656:7656"
+      - "7070:7070"
+    restart: unless-stopped
+    networks:
+      - echelon-net
+
+  # ─── ZeroNet Headless Client ──────────────────────────────────────────────
+  zeronet-headless:
+    image: nofish/zeronet:latest
+    container_name: echelon-zeronet
+    command: >
+      python3 zeronet.py
+      --ui_ip 0.0.0.0
+      --tor always
+      --tor_controller tor-pool:9051
+      --tor_proxy tor-pool:9050
+    ports:
+      - "43110:43110"
+      - "15441:15441"
+    depends_on:
+      - tor-pool
+    restart: unless-stopped
+    networks:
+      - echelon-net
+
+  # ─── Neo4j Graph Database ─────────────────────────────────────────────────
+  neo4j:
+    image: neo4j:5.26.0-community
+    container_name: echelon-neo4j
+    environment:
+      - NEO4J_AUTH=neo4j/echelon_neo4j
+      - NEO4J_PLUGINS=["apoc"]
+      - NEO4J_dbms_memory_heap_initial__size=512m
+      - NEO4J_dbms_memory_heap_max__size=1G
+    ports:
+      - "7474:7474"   # HTTP Browser
+      - "7687:7687"   # Bolt
+    volumes:
+      - neo4j_data:/data
+    restart: unless-stopped
+    networks:
+      - echelon-net
+
+  # ─── Redis (Job Queue + Pub/Sub) ──────────────────────────────────────────
+  redis:
+    image: redis:7-alpine
+    container_name: echelon-redis
+    ports:
+      - "6379:6379"
+    restart: unless-stopped
+    networks:
+      - echelon-net
+
+  # ─── ECHELON React Frontend ───────────────────────────────────────────────
+  echelon-frontend:
+    build:
+      context: ../echelon
+      dockerfile: Dockerfile.frontend
+    container_name: echelon-frontend
+    ports:
+      - "5173:5173"
+    environment:
+      - VITE_API_BASE=http://localhost:8000
+      - VITE_WS_BASE=ws://localhost:8000
+    depends_on:
+      - echelon-api
+    restart: unless-stopped
+    networks:
+      - echelon-net
+
+networks:
+  echelon-net:
+    driver: bridge
+
+volumes:
+  neo4j_data:

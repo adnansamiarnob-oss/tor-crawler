@@ -1,0 +1,24 @@
+version: '3.9'
+services:
+  frontend-ui:
+    build: .
+    ports:
+      - "5173:5173"
+    volumes:
+      - .:/app
+      - /app/node_modules
+
+  tor-proxy:
+    image: dperson/torproxy:latest
+    ports:
+      - "9050:9050"
+      - "9051:9051"
+    environment:
+      - TOR_NewCircuitPeriod=30
+
+  i2pd-router:
+    image: purplei2p/i2pd:latest
+    command: --sam.enabled=1 --sam.address=0.0.0.0 --httpproxy.enabled=1 --httpproxy.address=0.0.0.0
+    ports:
+      - "4444:4444"
+      - "7656:7656"
